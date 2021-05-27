@@ -14,12 +14,20 @@
 #include "jobs.h"
 #include "internals.h"
 
-#define MAXCHILDREN 255
-
 /**
  * Bug reports : 
  * -> kill 0 crashes the shell - wontfix
  */
+
+// close a file descriptor and check the return code
+int sclose(int fd)
+{
+    if (close(fd))
+    {
+        iothrow("Fatal error : File descriptor failed to close\n");
+        exit(EXIT_FAILURE);
+    }
+}
 
 // run a query
 void run(struct cmdline query)
@@ -31,82 +39,119 @@ void run(struct cmdline query)
 
     signal(SIGCHLD, update_job_state);
 
-    // run internal commands
+    // try running internal commands
     if (!run_internals(query))
     {
         return;
     }
 
-    int status;
-    int child = fork();
+    // execute query content if no internal command did match
+    int index = 0;
+    int pipes[MAXCOMMANDS][2];
+    while (query.seq[index] != NULL)
+    {
+        char **command = query.seq[index];
+        // open pipe
+        pipe(pipes[index]);
 
-    if (child < 0)
-    { // fork fail
-        iothrow("Fatal error : Process creation failed and returned %d\n", child);
-        exit(EXIT_FAILURE);
-    }
-    else if (child == 0)
-    { // fork success , child code
+        int child_status;
+        struct job child;
+        child.name = command[0];
+        child.pid = fork();
 
-        // reset behaviour
-        signal(SIGINT, SIG_DFL);
-        signal(SIGTSTP, SIG_DFL);
-
-        // in redirect
-        if (query.in != NULL)
-        {
-            int fd = open(query.in, O_RDONLY, 0666);
-            if (fd < 0)
+        if (child.pid < 0)
+        { // fork failure
+            iothrow("Fatal error : Process creation failed and returned %d\n", child.pid);
+            // close all pipes
+            if (index > 0) // not the first command in query.seq
             {
-                iothrow("Stdin : Invalid file name '%s' - operation cancelled\n", query.out);
-                exit(EXIT_FAILURE);
+                sclose(pipes[index - 1][0]);
+                sclose(pipes[index - 1][1]);
             }
-            dup2(fd, 0);
-        }
-        // out redirect
-        if (query.out != NULL)
-        {
-            int fd = open(query.out, O_WRONLY | O_CREAT, 0666);
-            if (fd < 0)
+            if (query.seq[index + 1] != NULL) // not the last command in query.seq
             {
-                iothrow("Stdout : Invalid file name '%s' - operation cancelled\n", query.out);
-                exit(EXIT_FAILURE);
+                sclose(pipes[index][0]);
+                sclose(pipes[index][1]);
             }
-            dup2(fd, 1);
+            exit(EXIT_FAILURE);
+        }
+        else if (child.pid == 0)
+        { // fork success, child code
+            // reset signal handling behaviour
+            signal(SIGINT, SIG_DFL);
+            signal(SIGTSTP, SIG_DFL);
+            signal(SIGCHLD, SIG_DFL);
+            // link pipes
+            if (index > 0) // not the first command in query.seq
+            {
+                dup2(pipes[index - 1][0], 0);
+                sclose(pipes[index - 1][0]);
+                sclose(pipes[index - 1][1]);
+            }
+            else if (query.in != NULL) // in redirect
+            {
+                int fd = open(query.in, O_RDONLY, 0666);
+                if (fd < 0)
+                {
+                    iothrow("Stdin : Invalid file name '%s' - operation cancelled\n", query.out);
+                    exit(EXIT_FAILURE);
+                }
+                dup2(fd, 0);
+            }
+
+            if (query.seq[index + 1] != NULL) // not the last command in query.seq
+            {
+                dup2(pipes[index][1], 1);
+                sclose(pipes[index][0]);
+                sclose(pipes[index][1]);
+            }
+            else if (query.out != NULL) // out redirect
+            {
+                int fd = open(query.out, O_WRONLY | O_CREAT, 0666);
+                if (fd < 0)
+                {
+                    iothrow("Stdout : Invalid file name '%s' - operation cancelled\n", query.out);
+                    exit(EXIT_FAILURE);
+                }
+                dup2(fd, 1);
+            }
+
+            // execute child code
+            execvp(command[0], command);
+            printf("%sUnknown command%s : %s\n", KRED, KWHT, command[0]);
+            exit(EXIT_FAILURE);
         }
 
-        // execute child code
-        execvp(query.seq[0][0], query.seq[0]);
-        printf("%sUnknown command%s : %s\n", KRED, KWHT, query.seq[0][0]);
-        exit(EXIT_FAILURE);
+        // close old pipes (parent)
+        if (index > 0)
+        {
+            sclose(pipes[index - 1][0]);
+            sclose(pipes[index - 1][1]);
+        }
+
+        // check if query must be run in background
+        if (query.backgrounded == NULL)
+        {
+            append_fg_job(child.pid, Running, child.name);
+        }
+        else
+        {
+            append_bg_job(child.pid, Running, child.name);
+        }
+
+        index++;
     }
 
     if (query.backgrounded == NULL)
-    {
-        fg_job = malloc(sizeof(struct job));
-        fg_job->pid = child;
-        if (query.seq[0] != NULL)
+    { // wait for children to finish their job
+        for (int i = 0; i < fg_jobc; i++)
         {
-            fg_job->name = query.seq[0][0];
-        }
-        else
-        {
-            fg_job->name = "empty job";
-        }
-        waitpid(child, &status, WUNTRACED);
-        fg_job = NULL;
-    }
-    else
-    {
-        if (query.seq[0] != NULL)
-        {
-            append_job(child, Running, query.seq[0][0]);
-        }
-        else
-        {
-            iothrow("illegal use of '&'\n");
+            int status;
+            waitpid(fg_jobs[i].pid, &status, WUNTRACED);
+            delete_fg_job(fg_jobs[i].pid);
         }
     }
+    return;
 }
 
 int main(int argc, char *argv[])

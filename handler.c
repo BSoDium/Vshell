@@ -8,14 +8,19 @@
 // Sigint signal handler (ctrl + c)
 void sigint_handler(int sig_num)
 {
-    if (fg_job != NULL)
+    if (fg_jobc > 0)
     {
-        kill(fg_job->pid, SIGINT);
-        int jobid = find_job(fg_job->pid);
-        if (jobid > 0) {
-            delete_job(jobid);
+        for (int i = 0; i < fg_jobc; i++)
+        {
+            struct job job = fg_jobs[i];
+            kill(job.pid, SIGINT);
+            int jobid = find_job(job.pid);
+            if (jobid > 0)
+            {
+                delete_bg_job(jobid);
+            }
+            delete_fg_job(job.pid);
         }
-        fg_job = NULL;
         printf("\n");
     }
     else
@@ -30,14 +35,19 @@ void sigint_handler(int sig_num)
 // Sigstop signal handler (ctrl + z)
 void sigstop_handler(int sig_num)
 {
-    if (fg_job != NULL)
+    if (fg_jobc > 0)
     {
-        printf("\n");
-        int jobid = find_job(fg_job->pid);
-        if (jobid < 0) {
-            append_job(fg_job->pid, Suspended, fg_job->name);
+        for (int i = 0; i < fg_jobc; i++)
+        {
+            struct job job = fg_jobs[i];
+            int jobid = find_job(job.pid);
+            if (jobid < 0)
+            {
+                append_bg_job(job.pid, Suspended, job.name);
+            }
+            kill(job.pid, SIGSTOP);
+            delete_fg_job(job.pid);
         }
-        kill(fg_job->pid, SIGSTOP);
-        fg_job = NULL;
+        printf("\n");
     }
 }

@@ -11,11 +11,11 @@
 void exit_sh()
 {
     int jobs_killed = 0;
-    for (int i = 0; i < jobc; i++)
+    for (int i = 0; i < bg_jobc; i++)
     {
-        if (jobs[i].status == Suspended || jobs[i].status == Running)
+        if (bg_jobs[i].status == Suspended || bg_jobs[i].status == Running)
         {
-            kill(jobs[i].pid, SIGINT);
+            kill(bg_jobs[i].pid, SIGINT);
             jobs_killed++;
         }
     }
@@ -37,9 +37,9 @@ int cd(char *path)
 
 int stop(int jid)
 {
-    if (jid < jobc)
+    if (jid < bg_jobc)
     {
-        int code = kill(jobs[jid].pid, SIGSTOP);
+        int code = kill(bg_jobs[jid].pid, SIGSTOP);
         return code;
     }
     else
@@ -50,9 +50,9 @@ int stop(int jid)
 
 int bg(int jid)
 {
-    if (jid < jobc)
+    if (jid < bg_jobc)
     {
-        int code = kill(jobs[jid].pid, SIGCONT);
+        int code = kill(bg_jobs[jid].pid, SIGCONT);
         return code;
     }
     else
@@ -64,12 +64,12 @@ int bg(int jid)
 int fg(int jid)
 {
     int status;
-    if (jid < jobc)
+    if (jid < bg_jobc)
     {
-        int code = kill(jobs[jid].pid, SIGCONT);
-        fg_job = &jobs[jid];
-        waitpid(jobs[jid].pid, &status, WUNTRACED);
-        fg_job = NULL;
+        int code = kill(bg_jobs[jid].pid, SIGCONT);
+        append_fg_job(bg_jobs[jid].pid, Running, bg_jobs[jid].name);
+        waitpid(bg_jobs[jid].pid, &status, WUNTRACED);
+        delete_fg_job(bg_jobs[jid].pid);
         return code;
     }
     else
@@ -80,7 +80,7 @@ int fg(int jid)
 
 int run_internals(struct cmdline query)
 {
-    // strcmp iothrows a segmentation fault on empty string comparison
+    // strcmp raises a segmentation fault on empty string comparison
     if (query.seq[0] == NULL)
     {
         return 1;
