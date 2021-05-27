@@ -5,13 +5,18 @@
 #include "shellio.h"
 #include "jobs.h"
 
+// Sigint signal handler (ctrl + c)
 void sigint_handler(int sig_num)
 {
     if (fg_job != NULL)
     {
         kill(fg_job->pid, SIGINT);
+        int jobid = find_job(fg_job->pid);
+        if (jobid > 0) {
+            delete_job(jobid);
+        }
+        fg_job = NULL;
         printf("\n");
-        // printf("killed process with pid %d\n", *fg_job);
     }
     else
     {
@@ -21,14 +26,18 @@ void sigint_handler(int sig_num)
         fflush(stdout);
     }
 }
+
+// Sigstop signal handler (ctrl + z)
 void sigstop_handler(int sig_num)
 {
     if (fg_job != NULL)
     {
         printf("\n");
-        append_job(fg_job->pid, fg_job->name);
+        int jobid = find_job(fg_job->pid);
+        if (jobid < 0) {
+            append_job(fg_job->pid, Suspended, fg_job->name);
+        }
         kill(fg_job->pid, SIGSTOP);
-        prompt();
-        fflush(stdout);
+        fg_job = NULL;
     }
 }

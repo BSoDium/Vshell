@@ -6,166 +6,20 @@
 #include <wait.h>
 #include <string.h>
 #include <errno.h>
+#include <fcntl.h>
 
 #include "readcmd.h"
 #include "handler.h"
 #include "shellio.h"
 #include "jobs.h"
+#include "internals.h"
+
+#define MAXCHILDREN 255
 
 /**
  * Bug reports : 
  * -> kill 0 crashes the shell - wontfix
  */
-
-// internals ----
-
-// exit the shell
-void exit_sh()
-{
-    int jobs_killed = 0;
-    for (int i = 0; i < jobc; i++)
-    {
-        if (strcmp(jobs[i].status, "Suspended") || strcmp(jobs[i].status, "Running"))
-        {
-            kill(jobs[i].pid, SIGINT);
-            jobs_killed++;
-        }
-    }
-    if (jobs_killed)
-    {
-        char *plural = "";
-        if (jobs_killed > 1)
-            plural = "s";
-        iothrow("Exiting : %d job%s killed\n", jobs_killed, plural);
-    }
-
-    exit(EXIT_SUCCESS);
-}
-
-// change directory
-int cd(char *path)
-{
-    return chdir(path);
-}
-
-// stop (suspend) a job
-int stop(int jid)
-{
-    if (jid < jobc)
-    {
-        int code = kill(jobs[jid].pid, SIGSTOP);
-        return code;
-    }
-    else
-    {
-        return 1;
-    }
-}
-
-// resume job as background process
-int bg(int jid)
-{
-    if (jid < jobc)
-    {
-        int code = kill(jobs[jid].pid, SIGCONT);
-        return code;
-    }
-    else
-    {
-        return 1;
-    }
-}
-
-// resume job as foreground process
-int fg(int jid)
-{
-    int status;
-    if (jid < jobc)
-    {
-        int code = kill(jobs[jid].pid, SIGCONT);
-        waitpid(jobs[jid].pid, &status, 0);
-        return code;
-    }
-    else
-    {
-        return 1;
-    }
-}
-
-/**
- * Run internal commands.
- * returns 0 if an internal command was executed, 1 if not
- */
-int run_internals(struct cmdline query)
-{
-    // strcmp iothrows a segmentation fault on empty string comparison
-    if (query.seq[0] == NULL)
-    {
-        return 1;
-    }
-
-    if (strcmp(query.seq[0][0], "exit") == 0)
-    {
-        exit_sh();
-        return 0; // unreachable code
-    }
-    else if (strcmp(query.seq[0][0], "cd") == 0)
-    {
-        if (cd(query.seq[0][1]))
-        {
-            iothrow("Unknown path : %s\n", query.seq[0][1]);
-        }
-        return 0;
-    }
-    else if (strcmp(query.seq[0][0], "jobs") == 0)
-    {
-        show_jobs();
-        return 0;
-    }
-    else if (strcmp(query.seq[0][0], "stop") == 0)
-    {
-        char *jobid = query.seq[0][1];
-        if (jobid == NULL)
-        {
-            iothrow("Job Id required\n");
-        }
-        else if (stop(atoi(jobid)))
-        {
-            iothrow("Unable to stop job with id : %s\n", jobid);
-        }
-        return 0;
-    }
-    else if (strcmp(query.seq[0][0], "fg") == 0)
-    {
-        char *jobid = query.seq[0][1];
-        if (jobid == NULL)
-        {
-            iothrow("Job Id required\n");
-        }
-        else if (fg(atoi(jobid)))
-        {
-            iothrow("Unable to resume foreground job with id : %s\n", jobid);
-        }
-        return 0;
-    }
-    else if (strcmp(query.seq[0][0], "bg") == 0)
-    {
-        char *jobid = query.seq[0][1];
-        if (jobid == NULL)
-        {
-            iothrow("Job Id required\n");
-        }
-        else if ((jobid != NULL) && bg(atoi(jobid)))
-        {
-            iothrow("Unable to resume background job with id : %s\n", jobid);
-        }
-        return 0;
-    }
-    else
-    {
-        return 1;
-    }
-}
 
 // run a query
 void run(struct cmdline query)
@@ -193,9 +47,34 @@ void run(struct cmdline query)
     }
     else if (child == 0)
     { // fork success , child code
+
         // reset behaviour
         signal(SIGINT, SIG_DFL);
         signal(SIGTSTP, SIG_DFL);
+
+        // in redirect
+        if (query.in != NULL)
+        {
+            int fd = open(query.in, O_RDONLY, 0666);
+            if (fd < 0)
+            {
+                iothrow("Stdin : Invalid file name '%s' - operation cancelled\n", query.out);
+                exit(EXIT_FAILURE);
+            }
+            dup2(fd, 0);
+        }
+        // out redirect
+        if (query.out != NULL)
+        {
+            int fd = open(query.out, O_WRONLY | O_CREAT, 0666);
+            if (fd < 0)
+            {
+                iothrow("Stdout : Invalid file name '%s' - operation cancelled\n", query.out);
+                exit(EXIT_FAILURE);
+            }
+            dup2(fd, 1);
+        }
+
         // execute child code
         execvp(query.seq[0][0], query.seq[0]);
         printf("%sUnknown command%s : %s\n", KRED, KWHT, query.seq[0][0]);
@@ -206,13 +85,27 @@ void run(struct cmdline query)
     {
         fg_job = malloc(sizeof(struct job));
         fg_job->pid = child;
-        fg_job->name = query.seq[0][0];
+        if (query.seq[0] != NULL)
+        {
+            fg_job->name = query.seq[0][0];
+        }
+        else
+        {
+            fg_job->name = "empty job";
+        }
         waitpid(child, &status, WUNTRACED);
         fg_job = NULL;
     }
     else
     {
-        append_job(child, query.seq[0][0]);
+        if (query.seq[0] != NULL)
+        {
+            append_job(child, Running, query.seq[0][0]);
+        }
+        else
+        {
+            iothrow("illegal use of '&'\n");
+        }
     }
 }
 
@@ -220,8 +113,22 @@ int main(int argc, char *argv[])
 {
     bool exit = false;
 
+    // Setup handlers
     signal(SIGINT, sigint_handler);
     signal(SIGTSTP, sigstop_handler);
+
+    // sigaction causes a segmentation error (that's why it is commented)
+    // struct sigaction intact, tstpact;
+
+    // intact.sa_handler = sigint_handler;
+    // sigemptyset(&intact.sa_mask);
+    // intact.sa_flags = 0;
+    // tstpact.sa_handler = sigstop_handler;
+    // sigemptyset(&tstpact.sa_mask);
+    // tstpact.sa_flags = 0;
+
+    // sigaction(SIGINT, &intact, NULL);
+    // sigaction(SIGTSTP, &tstpact, NULL);
 
     splash();
     while (!exit)

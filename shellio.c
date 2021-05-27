@@ -63,3 +63,4 @@ void prompt()
     // display prompt
     printf("%s%s@sh-%s%s:%s%s%s$ ", KYEL, getenv("USER"), VERSION, KWHT, KGRN, cwd(), KWHT);
 }
+
