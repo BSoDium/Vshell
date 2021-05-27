@@ -10,6 +10,7 @@ A very basic Shell proof of concept in C. Use with caution, everything isn't met
 ### Additional features
 - `|` (pipes)
 - `<`/`>` operators 
+- `&` (background jobs)
 
 ## Compilation & execution
 Pretty straightforward because there's no makefile :
