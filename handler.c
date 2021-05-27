@@ -19,7 +19,7 @@ void sigint_handler(int sig_num)
             {
                 delete_bg_job(jobid);
             }
-            delete_fg_job(job.pid);
+            delete_fg_job(jobid);
         }
         printf("\n");
     }
@@ -37,17 +37,17 @@ void sigstop_handler(int sig_num)
 {
     if (fg_jobc > 0)
     {
+        printf("\n");
         for (int i = 0; i < fg_jobc; i++)
         {
             struct job job = fg_jobs[i];
             int jobid = find_job(job.pid);
+            kill(job.pid, SIGSTOP);
+            delete_fg_job(jobid);
             if (jobid < 0)
             {
                 append_bg_job(job.pid, Suspended, job.name);
             }
-            kill(job.pid, SIGSTOP);
-            delete_fg_job(job.pid);
         }
-        printf("\n");
     }
 }

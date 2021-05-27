@@ -124,39 +124,76 @@ int delete_fg_job(int jid)
 // SIGCHLD handler
 void update_job_state(int sig_num)
 {
+
     int child_status, child_pid;
-    for (int i = 0; i < bg_jobc; i++)
+    do
     {
-        struct job job = bg_jobs[i];
-        int code = waitpid(job.pid, &child_status, WNOHANG); // get job status
-        if (code < 0)
+        child_pid = (int)waitpid(-1, &child_status, WNOHANG | WUNTRACED | WCONTINUED);
+        int job_id = find_job(child_pid);
+        if ((child_pid == -1) && (errno != ECHILD))
         {
             iothrow("\nInternal error : waitpid call failed in update_job_state, code below :\n");
-            printf("%dx%d@%s\n", i, job.pid, job.name);
+            printf("%dx%d@%s\n", job_id, child_pid, bg_jobs[job_id].name);
             exit(EXIT_FAILURE);
         }
-        if (WIFSTOPPED(child_status))
+        else if ((child_pid > 0) && (job_id >= 0))
         {
-            job.status = Suspended;
+            if (WIFSTOPPED(child_status))
+            {
+                bg_jobs[job_id].status = Suspended;
+            }
+            else if (WIFCONTINUED(child_status))
+            {
+                bg_jobs[job_id].status = Running;
+            }
+            else if (WIFEXITED(child_status))
+            {
+                bg_jobs[job_id].status = Done;
+                printf("\n");
+                print_job(job_id);
+                prompt();
+                fflush(stdout);
+                delete_bg_job(job_id);
+            }
+            else if (WIFSIGNALED(child_status))
+            {
+                bg_jobs[job_id].status = Unknown;
+            }
         }
-        else if (WIFCONTINUED(child_status))
-        {
-            job.status = Running;
-        }
-        else if (WIFEXITED(child_status))
-        {
-            job.status = Done;
-            printf("\n");
-            print_job(i);
-            prompt();
-            fflush(stdout);
-            delete_bg_job(i);
-        }
-        else if (WIFSIGNALED(child_status))
-        {
-            job.status = Unknown;
-        }
-    }
+    } while (child_pid > 0);
+
+    //     int child_status, child_pid;
+    // for (int i = 0; i < bg_jobc; i++)
+    // {
+    //     int code = waitpid(bg_jobs[i].pid, &child_status, WNOHANG); // get job status
+    //     if (code < 0)
+    //     {
+    //         iothrow("\nInternal error : waitpid call failed in update_job_state, code below :\n");
+    //         printf("%dx%d@%s\n", i, bg_jobs[i].pid, bg_jobs[i].name);
+    //         exit(EXIT_FAILURE);
+    //     }
+    //     if (WIFEXITED(child_status))
+    //     {
+    //         bg_jobs[i].status = Done;
+    //         printf("\n");
+    //         print_job(i);
+    //         prompt();
+    //         fflush(stdout);
+    //         delete_bg_job(i);
+    //     }
+    //     else if (WIFSIGNALED(child_status))
+    //     {
+    //         bg_jobs[i].status = Unknown;
+    //     }
+    //     else if (WIFCONTINUED(child_status))
+    //     {
+    //         bg_jobs[i].status = Running;
+    //     }
+    //     else if (WIFSTOPPED(child_status))
+    //     {
+    //         bg_jobs[i].status = Suspended;
+    //     }
+    // }
 }
 
 char *get_status_string(enum status s)

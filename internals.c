@@ -40,7 +40,7 @@ int stop(int jid)
     if (jid < bg_jobc)
     {
         int code = kill(bg_jobs[jid].pid, SIGSTOP);
-        return code;
+        return code < 0;
     }
     else
     {
@@ -53,7 +53,7 @@ int bg(int jid)
     if (jid < bg_jobc)
     {
         int code = kill(bg_jobs[jid].pid, SIGCONT);
-        return code;
+        return code < 0;
     }
     else
     {
@@ -66,11 +66,12 @@ int fg(int jid)
     int status;
     if (jid < bg_jobc)
     {
-        int code = kill(bg_jobs[jid].pid, SIGCONT);
+        delete_bg_job(jid);
         append_fg_job(bg_jobs[jid].pid, Running, bg_jobs[jid].name);
+        int code = kill(bg_jobs[jid].pid, SIGCONT);
         waitpid(bg_jobs[jid].pid, &status, WUNTRACED);
-        delete_fg_job(bg_jobs[jid].pid);
-        return code;
+        delete_fg_job(jid);
+        return code < 0;
     }
     else
     {

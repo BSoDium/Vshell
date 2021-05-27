@@ -148,7 +148,7 @@ void run(struct cmdline query)
         {
             int status;
             waitpid(fg_jobs[i].pid, &status, WUNTRACED);
-            delete_fg_job(fg_jobs[i].pid);
+            delete_fg_job(i);
         }
     }
     return;

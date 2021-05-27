@@ -4,9 +4,10 @@
 #include <string.h>
 #include <stdlib.h>
 #include <stdarg.h>
+
 #include "shellio.h"
 
-#define VERSION "0.2"
+#define VERSION "0.3"
 #define CWDBUFSIZE 255
 #define CWDMAXLEN 30
 
@@ -63,4 +64,3 @@ void prompt()
     // display prompt
     printf("%s%s@sh-%s%s:%s%s%s$ ", KYEL, getenv("USER"), VERSION, KWHT, KGRN, cwd(), KWHT);
 }
-
