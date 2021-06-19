@@ -16,6 +16,6 @@ A very basic Shell proof of concept in C. Use with caution, everything isn't met
 Pretty straightforward because there's no makefile :
 ```sh
 cd Vshell
-gcc *.c -o minishell
-./minishell
+gcc *.c -o vshell
+./vshell
 ```
