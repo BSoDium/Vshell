@@ -4,6 +4,7 @@
 # Unignore files with extensions and dirs
 !*.*
 !*/
+!Makefile
 
 # Prerequisites
 *.d
@@ -59,5 +60,7 @@ Mkfile.old
 dkms.conf
 
 # Vs code
-.vscode/
+.vscode/launch.json
+.vscode/tasks.json
+
 livrables/
