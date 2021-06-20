@@ -13,3 +13,9 @@ readcmd.o: readcmd.c readcmd.h
 
 shellio.o: shellio.c shellio.h
 	gcc -c shellio.c -o shellio.o
+
+check:
+	echo "skipped"
+
+distcheck:
+	echo "skipped"
